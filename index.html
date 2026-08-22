@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://api.github.com; img-src 'none'; font-src 'none'; object-src 'none'; media-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <title>Personal Notes</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section id="unlockView" class="view unlock-view" aria-labelledby="unlockTitle">
+      <div class="unlock-card">
+        <h1 id="unlockTitle">PERSONAL NOTES</h1>
+
+        <form id="unlockForm" autocomplete="off" novalidate>
+          <label for="tokenInput">GitHub Access Token</label>
+          <input
+            id="tokenInput"
+            name="token"
+            type="password"
+            inputmode="text"
+            autocomplete="off"
+            autocapitalize="none"
+            autocorrect="off"
+            spellcheck="false"
+            required
+          >
+
+          <label for="passwordInput">Master Password</label>
+          <input
+            id="passwordInput"
+            name="masterPassword"
+            type="password"
+            autocomplete="new-password"
+            autocapitalize="none"
+            autocorrect="off"
+            spellcheck="false"
+            required
+          >
+
+          <button id="unlockButton" type="submit" class="primary-button">UNLOCK</button>
+        </form>
+
+        <p id="unlockStatus" class="screen-status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section id="notesView" class="view notes-view" hidden aria-labelledby="notesTitle">
+      <header class="notes-header">
+        <h1 id="notesTitle">Personal Notes</h1>
+        <div id="saveStatus" class="save-status" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="saveStatusText">Saved</span>
+        </div>
+      </header>
+
+      <div class="editor-wrap">
+        <textarea
+          id="noteEditor"
+          aria-label="Personal note"
+          autocomplete="off"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
+          wrap="off"
+        ></textarea>
+      </div>
+
+      <footer class="notes-footer">
+        <button id="refreshButton" type="button">REFRESH</button>
+        <button id="saveButton" type="button" class="primary-button">SAVE</button>
+        <button id="lockButton" type="button">LOCK</button>
+      </footer>
+    </section>
+  </main>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
