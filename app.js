@@ -12,7 +12,7 @@ const CONFIG = Object.freeze({
   path: "notes.enc",
   apiVersion: "2026-03-10",
 });
-
+ 
 const CRYPTO = Object.freeze({
   envelopeVersion: 1,
   cipher: "AES-256-GCM",
