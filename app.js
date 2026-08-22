@@ -7,7 +7,7 @@
  * Never put a token, password, key, or note content in this file.
  */
 const CONFIG = Object.freeze({
-  owner: "YOUR_GITHUB_USERNAME",
+  owner: "techsfmc",
   repo: "personal-notepad-data",
   path: "notes.enc",
   apiVersion: "2026-03-10",
