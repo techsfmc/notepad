@@ -49,10 +49,17 @@
 
     <section id="notesView" class="view notes-view" hidden aria-labelledby="notesTitle">
       <header class="notes-header">
-        <h1 id="notesTitle">Personal Notes</h1>
-        <div id="saveStatus" class="save-status" role="status" aria-live="polite">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="saveStatusText">Saved</span>
+        <div class="header-title-group">
+          <h1 id="notesTitle">Personal Notes</h1>
+          <div id="saveStatus" class="save-status" role="status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="saveStatusText">Saved</span>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button id="passwordButton" type="button" class="compact-button">PASSWORD</button>
+          <button id="lockButton" type="button" class="compact-button">LOCK</button>
         </div>
       </header>
 
@@ -69,12 +76,57 @@
       </div>
 
       <footer class="notes-footer">
-        <button id="refreshButton" type="button">REFRESH</button>
-        <button id="saveButton" type="button" class="primary-button">SAVE</button>
-        <button id="lockButton" type="button">LOCK</button>
+        <div class="editor-meta" aria-live="polite">
+          <span id="lineCount">0 lines</span>
+          <span class="meta-separator" aria-hidden="true">•</span>
+          <span id="charCount">0 chars</span>
+        </div>
+
+        <div class="footer-actions">
+          <button id="wrapButton" type="button" aria-pressed="false">WRAP: OFF</button>
+          <button id="refreshButton" type="button">REFRESH</button>
+          <button id="saveButton" type="button" class="primary-button" title="Ctrl+S / Cmd+S">SAVE</button>
+        </div>
       </footer>
     </section>
   </main>
+
+  <dialog id="passwordDialog" class="password-dialog" aria-labelledby="passwordDialogTitle">
+    <form id="changePasswordForm" autocomplete="off" novalidate>
+      <div class="dialog-header">
+        <h2 id="passwordDialogTitle">Change Master Password</h2>
+      </div>
+
+      <div class="dialog-body">
+        <label for="newPasswordInput">New Master Password</label>
+        <input
+          id="newPasswordInput"
+          type="password"
+          autocomplete="new-password"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
+        >
+
+        <label for="confirmNewPasswordInput">Confirm New Master Password</label>
+        <input
+          id="confirmNewPasswordInput"
+          type="password"
+          autocomplete="new-password"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
+        >
+
+        <p id="passwordDialogStatus" class="dialog-status" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="dialog-actions">
+        <button id="changePasswordCancel" type="button">CANCEL</button>
+        <button id="changePasswordSubmit" type="submit" class="primary-button">CHANGE PASSWORD</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="app.js" defer></script>
 </body>
