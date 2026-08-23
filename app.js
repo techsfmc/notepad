@@ -1,10 +1,10 @@
 "use strict";
 
 /*
- * Phase 1 secure personal notepad.
+ * Phase 1.1 secure personal notepad.
  *
- * Configure only these non-secret values before deployment.
- * Never put a token, password, key, or note content in this file.
+ * No note, token, password, or key is intentionally persisted in browser storage.
+ * Configure only the non-secret repository values below.
  */
 const CONFIG = Object.freeze({
   owner: "techsfmc",
@@ -12,7 +12,7 @@ const CONFIG = Object.freeze({
   path: "notes.enc",
   apiVersion: "2026-03-10",
 });
- 
+
 const CRYPTO = Object.freeze({
   envelopeVersion: 1,
   cipher: "AES-256-GCM",
@@ -44,8 +44,19 @@ const dom = {
   refreshButton: document.getElementById("refreshButton"),
   saveButton: document.getElementById("saveButton"),
   lockButton: document.getElementById("lockButton"),
+  passwordButton: document.getElementById("passwordButton"),
+  wrapButton: document.getElementById("wrapButton"),
+  lineCount: document.getElementById("lineCount"),
+  charCount: document.getElementById("charCount"),
   saveStatus: document.getElementById("saveStatus"),
   saveStatusText: document.getElementById("saveStatusText"),
+  passwordDialog: document.getElementById("passwordDialog"),
+  changePasswordForm: document.getElementById("changePasswordForm"),
+  newPasswordInput: document.getElementById("newPasswordInput"),
+  confirmNewPasswordInput: document.getElementById("confirmNewPasswordInput"),
+  changePasswordCancel: document.getElementById("changePasswordCancel"),
+  changePasswordSubmit: document.getElementById("changePasswordSubmit"),
+  passwordDialogStatus: document.getElementById("passwordDialogStatus"),
 };
 
 const state = {
@@ -55,10 +66,10 @@ const state = {
   salt: null,
   iterations: null,
   sha: null,
-  lastSavedText: "",
   dirty: false,
   busy: false,
   initializedRemoteFile: false,
+  statsFrame: null,
 };
 
 class GitHubApiError extends Error {
@@ -498,25 +509,78 @@ function setSaveStatus(kind, message) {
   dom.saveStatusText.textContent = message;
 }
 
+function setPasswordDialogStatus(message, isError = false) {
+  dom.passwordDialogStatus.textContent = message;
+  dom.passwordDialogStatus.classList.toggle("error", isError);
+}
+
 function setBusy(isBusy) {
   state.busy = isBusy;
   dom.unlockButton.disabled = isBusy;
   dom.refreshButton.disabled = isBusy;
   dom.saveButton.disabled = isBusy;
   dom.lockButton.disabled = isBusy;
+  dom.passwordButton.disabled = isBusy;
+  dom.wrapButton.disabled = isBusy;
   dom.noteEditor.disabled = isBusy;
+  dom.newPasswordInput.disabled = isBusy;
+  dom.confirmNewPasswordInput.disabled = isBusy;
+  dom.changePasswordCancel.disabled = isBusy;
+  dom.changePasswordSubmit.disabled = isBusy;
 }
 
-function updateDirtyState() {
-  state.dirty = dom.noteEditor.value !== state.lastSavedText;
+function markDirty() {
+  state.dirty = true;
   if (!state.busy) {
-    setSaveStatus(state.dirty ? "unsaved" : "", state.dirty ? "Unsaved" : "Saved");
+    setSaveStatus("unsaved", "Unsaved");
   }
+  scheduleEditorStats();
+}
+
+function updateEditorStats() {
+  const value = dom.noteEditor.value;
+  let lines = 0;
+
+  if (value.length > 0) {
+    lines = 1;
+    for (let i = 0; i < value.length; i += 1) {
+      if (value.charCodeAt(i) === 10) {
+        lines += 1;
+      }
+    }
+  }
+
+  dom.lineCount.textContent = `${lines.toLocaleString()} ${lines === 1 ? "line" : "lines"}`;
+  dom.charCount.textContent = `${value.length.toLocaleString()} chars`;
+}
+
+function scheduleEditorStats() {
+  if (state.statsFrame !== null) {
+    cancelAnimationFrame(state.statsFrame);
+  }
+
+  state.statsFrame = requestAnimationFrame(() => {
+    state.statsFrame = null;
+    updateEditorStats();
+  });
+}
+
+function setWrap(enabled) {
+  dom.noteEditor.classList.toggle("wrap-enabled", enabled);
+  dom.noteEditor.wrap = enabled ? "soft" : "off";
+  dom.wrapButton.setAttribute("aria-pressed", String(enabled));
+  dom.wrapButton.textContent = enabled ? "WRAP: ON" : "WRAP: OFF";
+}
+
+function toggleWrap() {
+  setWrap(!dom.noteEditor.classList.contains("wrap-enabled"));
+  dom.noteEditor.focus();
 }
 
 function showNotesView() {
   dom.unlockView.hidden = true;
   dom.notesView.hidden = false;
+  updateEditorStats();
   dom.noteEditor.focus();
 }
 
@@ -524,6 +588,19 @@ function showUnlockView() {
   dom.notesView.hidden = true;
   dom.unlockView.hidden = false;
   dom.tokenInput.focus();
+}
+
+function clearPasswordDialogInputs() {
+  dom.newPasswordInput.value = "";
+  dom.confirmNewPasswordInput.value = "";
+  setPasswordDialogStatus("");
+}
+
+function closePasswordDialog() {
+  clearPasswordDialogInputs();
+  if (dom.passwordDialog.open) {
+    dom.passwordDialog.close();
+  }
 }
 
 function clearSensitiveState() {
@@ -540,19 +617,28 @@ function clearSensitiveState() {
   state.salt = null;
   state.iterations = null;
   state.sha = null;
-  state.lastSavedText = "";
   state.dirty = false;
   state.initializedRemoteFile = false;
+
+  if (state.statsFrame !== null) {
+    cancelAnimationFrame(state.statsFrame);
+    state.statsFrame = null;
+  }
 
   dom.noteEditor.value = "";
   dom.tokenInput.value = "";
   dom.passwordInput.value = "";
+  setWrap(false);
+  closePasswordDialog();
+  updateEditorStats();
 }
 
 function presentError(error, surface = "notes") {
   const message = humanizeError(error);
   if (surface === "unlock") {
     setUnlockStatus(message, true);
+  } else if (surface === "password") {
+    setPasswordDialogStatus(message, true);
   } else {
     setSaveStatus("error", message);
   }
@@ -583,9 +669,45 @@ function humanizeError(error) {
     ENVELOPE_TOO_LARGE: "The encrypted note exceeds the Phase 1 safety limit.",
     CONCURRENT_UPDATE: "A newer version exists. Refresh before saving.",
     REMOTE_FILE_REMOVED: "The remote note changed or was removed. Refresh before saving.",
-    PASSWORD_TOO_SHORT: `For first-time setup, use a master password of at least ${CRYPTO.minimumNewPasswordLength} characters.`,
+    PASSWORD_TOO_SHORT: `Use a master password of at least ${CRYPTO.minimumNewPasswordLength} characters.`,
+    PASSWORD_MISMATCH: "The new master passwords do not match.",
+    SAVE_BEFORE_PASSWORD_CHANGE: "Save your note before changing the master password.",
+    PASSWORD_CHANGE_REQUIRES_INITIAL_SAVE: "Save this new note once before changing the master password.",
   };
   return messages[code] || "An unexpected error occurred. Nothing was saved.";
+}
+
+async function assertRemoteUnchanged() {
+  const remote = await state.github.readNote();
+
+  if (state.sha === null) {
+    if (remote.exists) {
+      throw new Error("CONCURRENT_UPDATE");
+    }
+  } else if (!remote.exists) {
+    throw new Error("REMOTE_FILE_REMOVED");
+  } else if (remote.sha !== state.sha) {
+    throw new Error("CONCURRENT_UPDATE");
+  }
+
+  return remote;
+}
+
+async function writeEnvelopeWithConflictProtection(envelopeText) {
+  try {
+    return await state.github.writeNote(envelopeText, state.sha);
+  } catch (error) {
+    if (error instanceof GitHubApiError && (error.status === 409 || error.status === 422)) {
+      const afterFailure = await state.github.readNote();
+      if (
+        (state.sha === null && afterFailure.exists) ||
+        (state.sha !== null && (!afterFailure.exists || afterFailure.sha !== state.sha))
+      ) {
+        throw new Error("CONCURRENT_UPDATE");
+      }
+    }
+    throw error;
+  }
 }
 
 async function handleUnlock(event) {
@@ -648,10 +770,10 @@ async function handleUnlock(event) {
     state.iterations = iterations;
     state.sha = remote.sha;
     state.initializedRemoteFile = remote.exists;
-    state.lastSavedText = plaintext;
     state.dirty = false;
 
     dom.noteEditor.value = plaintext;
+    plaintext = "";
     dom.tokenInput.value = "";
     setUnlockStatus("");
     showNotesView();
@@ -674,17 +796,7 @@ async function handleSave() {
   setSaveStatus("loading", "Saving…");
 
   try {
-    const remote = await state.github.readNote();
-
-    if (state.sha === null) {
-      if (remote.exists) {
-        throw new Error("CONCURRENT_UPDATE");
-      }
-    } else if (!remote.exists) {
-      throw new Error("REMOTE_FILE_REMOVED");
-    } else if (remote.sha !== state.sha) {
-      throw new Error("CONCURRENT_UPDATE");
-    }
+    await assertRemoteUnchanged();
 
     const textToSave = dom.noteEditor.value;
     const encryptedEnvelope = await encryptNote(
@@ -694,34 +806,16 @@ async function handleSave() {
       state.iterations,
     );
 
-    let newSha;
-    try {
-      newSha = await state.github.writeNote(encryptedEnvelope, state.sha);
-    } catch (error) {
-      if (error instanceof GitHubApiError && (error.status === 409 || error.status === 422)) {
-        const afterFailure = await state.github.readNote();
-        if (
-          (state.sha === null && afterFailure.exists) ||
-          (state.sha !== null && (!afterFailure.exists || afterFailure.sha !== state.sha))
-        ) {
-          throw new Error("CONCURRENT_UPDATE");
-        }
-      }
-      throw error;
-    }
+    const newSha = await writeEnvelopeWithConflictProtection(encryptedEnvelope);
 
     state.sha = newSha;
     state.initializedRemoteFile = true;
-    state.lastSavedText = textToSave;
     state.dirty = false;
     setSaveStatus("", "Saved");
   } catch (error) {
     presentError(error, "notes");
   } finally {
     setBusy(false);
-    if (!dom.saveStatus.classList.contains("error")) {
-      updateDirtyState();
-    }
   }
 }
 
@@ -744,8 +838,8 @@ async function handleRefresh() {
       }
 
       dom.noteEditor.value = "";
-      state.lastSavedText = "";
       state.dirty = false;
+      updateEditorStats();
       setSaveStatus("", "New note");
       return;
     }
@@ -759,20 +853,119 @@ async function handleRefresh() {
       throw new Error("DECRYPTION_FAILED");
     }
 
-    const plaintext = await decryptNote(parsed, state.cryptoKey);
+    let plaintext = await decryptNote(parsed, state.cryptoKey);
     parsed.saltBytes.fill(0);
     parsed.ivBytes.fill(0);
     parsed.ciphertextBytes.fill(0);
 
     dom.noteEditor.value = plaintext;
+    plaintext = "";
     state.sha = remote.sha;
-    state.lastSavedText = plaintext;
     state.dirty = false;
     state.initializedRemoteFile = true;
+    updateEditorStats();
     setSaveStatus("", "Saved");
   } catch (error) {
     presentError(error, "notes");
   } finally {
+    setBusy(false);
+  }
+}
+
+function openPasswordDialog() {
+  if (state.busy || !state.github || !state.cryptoKey) return;
+
+  if (!state.initializedRemoteFile || state.sha === null) {
+    setSaveStatus("error", humanizeError(new Error("PASSWORD_CHANGE_REQUIRES_INITIAL_SAVE")));
+    return;
+  }
+
+  if (state.dirty) {
+    setSaveStatus("error", humanizeError(new Error("SAVE_BEFORE_PASSWORD_CHANGE")));
+    return;
+  }
+
+  clearPasswordDialogInputs();
+  dom.passwordDialog.showModal();
+  dom.newPasswordInput.focus();
+}
+
+async function handleChangePassword(event) {
+  event.preventDefault();
+  if (state.busy || !state.github || !state.cryptoKey) return;
+
+  let newPassword = dom.newPasswordInput.value;
+  let confirmPassword = dom.confirmNewPasswordInput.value;
+
+  if (newPassword.length < CRYPTO.minimumNewPasswordLength) {
+    presentError(new Error("PASSWORD_TOO_SHORT"), "password");
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    presentError(new Error("PASSWORD_MISMATCH"), "password");
+    return;
+  }
+
+  if (state.dirty) {
+    presentError(new Error("SAVE_BEFORE_PASSWORD_CHANGE"), "password");
+    return;
+  }
+
+  setBusy(true);
+  setPasswordDialogStatus("Changing password…");
+
+  let newSalt = null;
+  let newKey = null;
+  let committed = false;
+
+  try {
+    await assertRemoteUnchanged();
+
+    newSalt = crypto.getRandomValues(new Uint8Array(CRYPTO.saltBytes));
+    newKey = await deriveEncryptionKey(newPassword, newSalt, CRYPTO.iterations);
+    newPassword = "";
+    confirmPassword = "";
+    dom.newPasswordInput.value = "";
+    dom.confirmNewPasswordInput.value = "";
+
+    const encryptedEnvelope = await encryptNote(
+      dom.noteEditor.value,
+      newKey,
+      newSalt,
+      CRYPTO.iterations,
+    );
+
+    const newSha = await writeEnvelopeWithConflictProtection(encryptedEnvelope);
+
+    if (state.salt instanceof Uint8Array) {
+      state.salt.fill(0);
+    }
+
+    state.cryptoKey = newKey;
+    state.salt = newSalt;
+    state.iterations = CRYPTO.iterations;
+    state.sha = newSha;
+    state.dirty = false;
+    committed = true;
+
+    setSaveStatus("", "Saved");
+    closePasswordDialog();
+  } catch (error) {
+    presentError(error, "password");
+  } finally {
+    newPassword = "";
+    confirmPassword = "";
+    dom.newPasswordInput.value = "";
+    dom.confirmNewPasswordInput.value = "";
+
+    if (!committed) {
+      if (newSalt instanceof Uint8Array) {
+        newSalt.fill(0);
+      }
+      newKey = null;
+    }
+
     setBusy(false);
   }
 }
@@ -791,6 +984,15 @@ function handleLock() {
   showUnlockView();
 }
 
+function handleKeyboardShortcut(event) {
+  const saveShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s";
+  if (!saveShortcut) return;
+  if (dom.notesView.hidden || dom.passwordDialog.open) return;
+
+  event.preventDefault();
+  handleSave();
+}
+
 function initialize() {
   if (window.top !== window.self) {
     document.body.textContent = "For security, this application cannot run inside a frame.";
@@ -798,10 +1000,16 @@ function initialize() {
   }
 
   dom.unlockForm.addEventListener("submit", handleUnlock);
-  dom.noteEditor.addEventListener("input", updateDirtyState);
+  dom.noteEditor.addEventListener("input", markDirty);
   dom.saveButton.addEventListener("click", handleSave);
   dom.refreshButton.addEventListener("click", handleRefresh);
   dom.lockButton.addEventListener("click", handleLock);
+  dom.passwordButton.addEventListener("click", openPasswordDialog);
+  dom.wrapButton.addEventListener("click", toggleWrap);
+  dom.changePasswordForm.addEventListener("submit", handleChangePassword);
+  dom.changePasswordCancel.addEventListener("click", closePasswordDialog);
+  dom.passwordDialog.addEventListener("close", clearPasswordDialogInputs);
+  document.addEventListener("keydown", handleKeyboardShortcut);
 
   window.addEventListener("beforeunload", (event) => {
     if (!state.dirty) return;
@@ -809,6 +1017,8 @@ function initialize() {
     event.returnValue = "";
   });
 
+  setWrap(false);
+  updateEditorStats();
   showUnlockView();
 }
 
