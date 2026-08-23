@@ -1,5 +1,4 @@
 "use strict";
-
 /*
  * Phase 1.1 secure personal notepad.
  *
